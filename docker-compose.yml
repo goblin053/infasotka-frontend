@@ -1,0 +1,21 @@
+# Фронтенд для проверки API: http://localhost:3000 → nginx → бэкенд (см. BACKEND_HTTP_HOST).
+# Бэкендеру: поднять свой сервис на машине на нужном порту и выставить переменную ниже.
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Оставить пустым — запросы на тот же origin /api (прокси nginx).
+        # Или, например, https://dev-api.example.com — тогда CORS должен быть настроен на бэке.
+        VITE_API_URL: ${VITE_API_URL:-}
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    environment:
+      # Хост:порт, куда nginx проксирует /api и /health (как видит контейнер).
+      # По умолчанию — сервис на хосте (Windows/macOS Docker Desktop).
+      BACKEND_HTTP_HOST: ${BACKEND_HTTP_HOST:-host.docker.internal:8080}
+    extra_hosts:
+      # Linux (Docker 20.10+): имя host.docker.internal → шлюз к хосту
+      - "host.docker.internal:host-gateway"
