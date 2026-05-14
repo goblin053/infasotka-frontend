@@ -20,6 +20,20 @@ const monacoLanguageByTaskType = {
   table: 'python',
 };
 
+function taskTopicSquareLabel(task) {
+  if (!task) return '—';
+  if (task.kimNumber != null && String(task.kimNumber).trim() !== '') return String(task.kimNumber);
+  if (task.number != null && String(task.number).trim() !== '') return String(task.number);
+  if (task.id != null) return String(task.id);
+  return '—';
+}
+
+function taskLevelRu(level) {
+  const key = String(level || '').toLowerCase();
+  const map = { easy: 'базовый', medium: 'средний', hard: 'профильный' };
+  return map[key] || (level ? String(level) : '');
+}
+
 function codeStorageKey(taskId) {
   return `infostotka_solution_code_${taskId}`;
 }
@@ -431,7 +445,6 @@ function isImageFileName(fileName) {
 
 export function TaskSolutionPage({
   task,
-  catalogListPosition = null,
   onBackToCatalog,
   onSubmitSolution,
   onDownloadTaskFile,
@@ -633,17 +646,12 @@ export function TaskSolutionPage({
                 }}
                 aria-hidden
               >
-                {String(task.number ?? task.id ?? '').trim() || '—'}
+                {taskTopicSquareLabel(task)}
               </div>
               <div style={{ minWidth: 0, flex: 1 }}>
-                {catalogListPosition != null ? (
-                  <div style={{ fontSize: 12, color: palette.muted, fontWeight: 600, marginBottom: 4 }}>
-                    В списке заданий: <span style={{ color: palette.text, fontWeight: 800 }}>№{catalogListPosition}</span>
-                  </div>
-                ) : null}
                 <div style={{ fontSize: 13, color: palette.muted, fontStyle: 'italic', lineHeight: 1.35 }}>
-                  № {task.id} · {task.source || 'Банк задач'} · КИМ {task.kimNumber}
-                  {task.level ? ` · уровень: ${task.level}` : ''}
+                  №{task.id} · {task.source || 'Банк задач'}
+                  {task.level ? ` · уровень: ${taskLevelRu(task.level)}` : ''}
                 </div>
                 <div style={{ fontSize: 18, fontWeight: 900, color: palette.text, marginTop: 6, lineHeight: 1.25 }}>
                   {task.title || 'Задача'}

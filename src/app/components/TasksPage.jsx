@@ -25,6 +25,14 @@ const levelMeta = {
   hard: { label: 'Профильный', tone: 'red' },
 };
 
+/** Номер КИМ в квадрате карточки; если нет — номер в банке, затем id. */
+function taskTopicSquareLabel(task) {
+  if (task?.kimNumber != null && String(task.kimNumber).trim() !== '') return String(task.kimNumber);
+  if (task?.number != null && String(task.number).trim() !== '') return String(task.number);
+  if (task?.id != null) return String(task.id);
+  return '—';
+}
+
 function formatHomeworkDeadline(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -531,7 +539,7 @@ export function TasksPage({
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: '#fbfcff' }}>
-                      {['Пор.', 'Банк №', 'Источник', 'Тема', 'КИМ', 'Статус'].map((h) => (
+                      {['Пор.', 'Банк №', 'Источник', 'Тема', 'КИМ', 'Уровень', 'Статус'].map((h) => (
                         <th key={h} style={{ textAlign: 'left', padding: '10px 12px', color: palette.muted, borderBottom: `1px solid ${palette.border}` }}>
                           {h}
                         </th>
@@ -542,10 +550,11 @@ export function TasksPage({
                     {displayedTasks.map((task, idx) => {
                       const st = taskStatusDisplay(task);
                       const inHw = homeworkIdSet.has(Number(task.id));
+                      const meta = levelMeta[task.level] || { label: task.level || '—', tone: 'blue' };
                       return (
                         <tr
                           key={task.id}
-                          onClick={() => onOpenTask(task.id, { catalogListPosition: idx + 1 })}
+                          onClick={() => onOpenTask(task.id)}
                           style={{
                             cursor: 'pointer',
                             background: inHw ? '#f0fdf4' : undefined,
@@ -575,6 +584,9 @@ export function TasksPage({
                           <td style={{ padding: '10px 12px', borderBottom: `1px solid ${palette.border}` }}>{task.source}</td>
                           <td style={{ padding: '10px 12px', borderBottom: `1px solid ${palette.border}` }}>{task.topic}</td>
                           <td style={{ padding: '10px 12px', borderBottom: `1px solid ${palette.border}` }}>КИМ {task.kimNumber}</td>
+                          <td style={{ padding: '10px 12px', borderBottom: `1px solid ${palette.border}` }}>
+                            <Badge tone={levelTone(task)}>{meta.label}</Badge>
+                          </td>
                           <td style={{ padding: '10px 12px', borderBottom: `1px solid ${palette.border}`, color: st.fg, fontWeight: 800 }}>
                             <span style={{ marginRight: 6 }}>{st.mark}</span>
                             {st.text}
@@ -587,7 +599,7 @@ export function TasksPage({
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 12 }}>
-                {displayedTasks.map((task, idx) => {
+                {displayedTasks.map((task) => {
                   const meta = levelMeta[task.level] || { label: task.level, tone: 'blue' };
                   const st = taskStatusDisplay(task);
                   const inHw = homeworkIdSet.has(Number(task.id));
@@ -605,11 +617,11 @@ export function TasksPage({
                       <div
                         role="button"
                         tabIndex={0}
-                        onClick={() => onOpenTask(task.id, { catalogListPosition: idx + 1 })}
+                        onClick={() => onOpenTask(task.id)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
-                            onOpenTask(task.id, { catalogListPosition: idx + 1 });
+                            onOpenTask(task.id);
                           }
                         }}
                         style={{ cursor: 'pointer' }}
@@ -632,13 +644,17 @@ export function TasksPage({
                               }}
                               aria-hidden
                             >
-                              {idx + 1}
+                              {taskTopicSquareLabel(task)}
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-                              <div style={{ fontSize: 12, color: palette.muted, fontStyle: 'italic' }}>
-                                Задача в банке: <strong style={{ color: palette.text, fontStyle: 'normal' }}>№{task.number}</strong>
-                                {task.id != null ? ` · id ${task.id}` : ''}
-                              </div>
+                              {task.id != null ? (
+                                <div style={{ fontSize: 12, color: palette.muted, fontWeight: 700 }}>
+                                  Задача <span style={{ color: palette.text }}>№{task.id}</span>
+                                  {task.number != null && String(task.number).trim() !== '' ? (
+                                    <span style={{ fontWeight: 600, color: palette.muted }}>{` · банк №${task.number}`}</span>
+                                  ) : null}
+                                </div>
+                              ) : null}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                               {inHw ? (
                                 <span
@@ -669,6 +685,10 @@ export function TasksPage({
                                 {task.source}
                               </span>
                               <Badge tone={levelTone(task)}>{meta.label}</Badge>
+                            </div>
+
+                            <div style={{ fontSize: 17, fontWeight: 900, color: palette.text, lineHeight: 1.25 }}>
+                              {task.title || `Задание ${task.id ?? ''}`}
                             </div>
 
                             <div style={{ color: palette.text, lineHeight: 1.35 }}>{task.description}</div>

@@ -539,17 +539,11 @@ function StudentTaskSolutionRoute({
 }) {
   const { taskId } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
   const numericTaskId = Number(taskId);
   const task = useMemo(() => tasks.find((item) => item.id === numericTaskId), [tasks, numericTaskId]);
-  const catalogListPosition =
-    location.state && typeof location.state === 'object' && location.state.catalogListPosition != null
-      ? Number(location.state.catalogListPosition)
-      : null;
   return (
     <TaskSolutionPage
       task={task}
-      catalogListPosition={Number.isFinite(catalogListPosition) && catalogListPosition > 0 ? catalogListPosition : null}
       onBackToCatalog={() => navigate('/student/tasks')}
       onSubmitSolution={onSubmitSolution}
       onDownloadTaskFile={onDownloadTaskFile}

@@ -21,6 +21,13 @@ const levelMeta = {
   hard: { label: 'Профильный', tone: 'red' },
 };
 
+function taskTopicSquareLabel(task) {
+  if (task?.kimNumber != null && String(task.kimNumber).trim() !== '') return String(task.kimNumber);
+  if (task?.number != null && String(task.number).trim() !== '') return String(task.number);
+  if (task?.id != null) return String(task.id);
+  return '—';
+}
+
 function pad2(n) {
   return String(n).padStart(2, '0');
 }
@@ -476,7 +483,7 @@ export function TutorTasksHomeworkPage({
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: '#fbfcff' }}>
-                      {['', 'Пор.', 'Банк №', 'Источник', 'Тема', 'КИМ'].map((h, i) => (
+                      {['', 'Пор.', 'Банк №', 'Источник', 'Тема', 'КИМ', 'Уровень'].map((h, i) => (
                         <th key={String(i)} style={{ textAlign: 'left', padding: '10px 12px', color: palette.muted, borderBottom: `1px solid ${palette.border}` }}>
                           {h || ' '}
                         </th>
@@ -502,8 +509,8 @@ export function TutorTasksHomeworkPage({
                           <td style={{ padding: '10px 12px', borderBottom: `1px solid ${palette.border}`, fontWeight: 800 }}>{task.number}</td>
                           <td style={{ padding: '10px 12px', borderBottom: `1px solid ${palette.border}` }}>{task.source}</td>
                           <td style={{ padding: '10px 12px', borderBottom: `1px solid ${palette.border}` }}>{task.topic}</td>
+                          <td style={{ padding: '10px 12px', borderBottom: `1px solid ${palette.border}` }}>КИМ {task.kimNumber}</td>
                           <td style={{ padding: '10px 12px', borderBottom: `1px solid ${palette.border}` }}>
-                            <span style={{ marginRight: 8 }}>КИМ {task.kimNumber}</span>
                             <Badge tone={levelTone(task)}>{meta.label}</Badge>
                           </td>
                         </tr>
@@ -514,7 +521,7 @@ export function TutorTasksHomeworkPage({
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 12 }}>
-                {filteredTasks.map((task, idx) => {
+                {filteredTasks.map((task) => {
                   const meta = levelMeta[task.level] || { label: task.level, tone: 'blue' };
                   const checked = selectedTaskIds.has(Number(task.id));
                   return (
@@ -552,13 +559,17 @@ export function TutorTasksHomeworkPage({
                           }}
                           aria-hidden
                         >
-                          {idx + 1}
+                          {taskTopicSquareLabel(task)}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, color: palette.muted, fontStyle: 'italic', marginBottom: 6 }}>
-                            Задача в банке: <strong style={{ color: palette.text, fontStyle: 'normal' }}>№{task.number}</strong>
-                            {task.id != null ? ` · id ${task.id}` : ''}
-                          </div>
+                          {task.id != null ? (
+                            <div style={{ fontSize: 12, color: palette.muted, fontWeight: 700, marginBottom: 6 }}>
+                              Задача <span style={{ color: palette.text }}>№{task.id}</span>
+                              {task.number != null && String(task.number).trim() !== '' ? (
+                                <span style={{ fontWeight: 600, color: palette.muted }}>{` · банк №${task.number}`}</span>
+                              ) : null}
+                            </div>
+                          ) : null}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
                             <span
                               style={{
@@ -574,6 +585,9 @@ export function TutorTasksHomeworkPage({
                               {task.source}
                             </span>
                             <Badge tone={levelTone(task)}>{meta.label}</Badge>
+                          </div>
+                          <div style={{ fontSize: 17, fontWeight: 900, color: palette.text, lineHeight: 1.25, marginBottom: 8 }}>
+                            {task.title || `Задание ${task.id ?? ''}`}
                           </div>
                           <div style={{ color: palette.text, lineHeight: 1.35, marginBottom: 8 }}>{task.description}</div>
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
