@@ -166,21 +166,23 @@ export function TasksPage({
   };
 
   const setAnswer = (taskId, value) => {
-    setAnswers((prev) => ({ ...prev, [taskId]: value }));
+    const key = String(taskId);
+    setAnswers((prev) => ({ ...prev, [key]: value }));
     setFeedbackByTaskId((prev) => {
       const next = { ...prev };
-      delete next[taskId];
+      delete next[key];
       return next;
     });
     setReviewStatusByTaskId((prev) => {
       const next = { ...prev };
-      delete next[taskId];
+      delete next[key];
       return next;
     });
   };
 
   const checkAnswer = async (task) => {
-    const raw = (answers[task.id] || '').trim();
+    const taskKey = String(task.id);
+    const raw = (answers[taskKey] || answers[task.id] || '').trim();
     if (!raw) return;
     if (onSubmitTaskAnswer) {
       setCheckingTaskId(task.id);
@@ -189,11 +191,11 @@ export function TasksPage({
         const ok = Boolean(result?.correct);
         setReviewStatusByTaskId((prev) => ({
           ...prev,
-          [task.id]: ok ? 'correct' : 'wrong',
+          [taskKey]: ok ? 'correct' : 'wrong',
         }));
         setFeedbackByTaskId((prev) => ({
           ...prev,
-          [task.id]: result?.message || (ok ? 'Верно!' : 'Неверно.'),
+          [taskKey]: result?.message || (ok ? 'Верно!' : 'Неверно.'),
         }));
         if (ok && typeof onReloadHomework === 'function') {
           void Promise.resolve(onReloadHomework()).catch(() => {});
@@ -201,7 +203,7 @@ export function TasksPage({
       } catch (error) {
         setFeedbackByTaskId((prev) => ({
           ...prev,
-          [task.id]: error?.message || 'Не удалось проверить ответ. Попробуйте позже.',
+          [taskKey]: error?.message || 'Не удалось проверить ответ. Попробуйте позже.',
         }));
       } finally {
         setCheckingTaskId((prev) => (prev === task.id ? null : prev));
@@ -212,7 +214,7 @@ export function TasksPage({
     if (!expectedStr) {
       setFeedbackByTaskId((prev) => ({
         ...prev,
-        [task.id]: 'Для этой задачи проверка по короткому ответу не настроена. Откройте задание и отправьте код.',
+        [taskKey]: 'Для этой задачи проверка по короткому ответу не настроена. Откройте задание и отправьте код.',
       }));
       return;
     }
@@ -220,18 +222,19 @@ export function TasksPage({
     const ok = raw.toLowerCase() === expected;
     setReviewStatusByTaskId((prev) => ({
       ...prev,
-      [task.id]: ok ? 'correct' : 'wrong',
+      [taskKey]: ok ? 'correct' : 'wrong',
     }));
     setFeedbackByTaskId((prev) => ({
       ...prev,
-      [task.id]: ok ? `Верно! Ответ: ${task.correctAnswer}` : `Неверно. Правильный ответ: ${task.correctAnswer}`,
+      [taskKey]: ok ? `Верно! Ответ: ${task.correctAnswer}` : `Неверно. Правильный ответ: ${task.correctAnswer}`,
     }));
   };
 
   const levelTone = (task) => levelMeta[task.level]?.tone || 'blue';
 
   const taskStatusDisplay = (task) => {
-    const reviewed = reviewStatusByTaskId[task.id];
+    const taskKey = String(task.id);
+    const reviewed = reviewStatusByTaskId[taskKey];
     if (reviewed === 'correct') return { text: 'Решено', fg: palette.green, mark: '✓' };
     if (reviewed === 'wrong') return { text: 'Неверно', fg: palette.red, mark: '✕' };
     if (task.solved) return { text: 'Решено', fg: palette.green, mark: '✓' };
@@ -528,7 +531,7 @@ export function TasksPage({
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: '#fbfcff' }}>
-                      {['№', 'Источник', 'Тема', 'КИМ', 'Статус'].map((h) => (
+                      {['Пор.', 'Банк №', 'Источник', 'Тема', 'КИМ', 'Статус'].map((h) => (
                         <th key={h} style={{ textAlign: 'left', padding: '10px 12px', color: palette.muted, borderBottom: `1px solid ${palette.border}` }}>
                           {h}
                         </th>
@@ -536,20 +539,23 @@ export function TasksPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {displayedTasks.map((task) => {
+                    {displayedTasks.map((task, idx) => {
                       const st = taskStatusDisplay(task);
                       const inHw = homeworkIdSet.has(Number(task.id));
                       return (
                         <tr
                           key={task.id}
-                          onClick={() => onOpenTask(task.id)}
+                          onClick={() => onOpenTask(task.id, { catalogListPosition: idx + 1 })}
                           style={{
                             cursor: 'pointer',
                             background: inHw ? '#f0fdf4' : undefined,
                           }}
                         >
+                          <td style={{ padding: '10px 12px', borderBottom: `1px solid ${palette.border}`, fontWeight: 900, fontSize: 16 }}>
+                            {idx + 1}
+                          </td>
                           <td style={{ padding: '10px 12px', borderBottom: `1px solid ${palette.border}`, fontWeight: 800 }}>
-                            <span style={{ marginRight: 8 }}>№ {task.number}</span>
+                            <span style={{ marginRight: 8 }}>{task.number}</span>
                             {inHw ? (
                               <span
                                 style={{
@@ -581,7 +587,7 @@ export function TasksPage({
               </div>
             ) : (
               <div style={{ display: 'grid', gap: 12 }}>
-                {displayedTasks.map((task) => {
+                {displayedTasks.map((task, idx) => {
                   const meta = levelMeta[task.level] || { label: task.level, tone: 'blue' };
                   const st = taskStatusDisplay(task);
                   const inHw = homeworkIdSet.has(Number(task.id));
@@ -599,19 +605,41 @@ export function TasksPage({
                       <div
                         role="button"
                         tabIndex={0}
-                        onClick={() => onOpenTask(task.id)}
+                        onClick={() => onOpenTask(task.id, { catalogListPosition: idx + 1 })}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
-                            onOpenTask(task.id);
+                            onOpenTask(task.id, { catalogListPosition: idx + 1 });
                           }
                         }}
                         style={{ cursor: 'pointer' }}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', minWidth: 0, flex: 1 }}>
+                            <div
+                              style={{
+                                flexShrink: 0,
+                                width: 44,
+                                height: 44,
+                                borderRadius: 10,
+                                border: `2px solid ${palette.border}`,
+                                display: 'grid',
+                                placeItems: 'center',
+                                fontSize: 18,
+                                fontWeight: 900,
+                                color: palette.text,
+                                background: '#fff',
+                              }}
+                              aria-hidden
+                            >
+                              {idx + 1}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, color: palette.muted, fontStyle: 'italic' }}>
+                                Задача в банке: <strong style={{ color: palette.text, fontStyle: 'normal' }}>№{task.number}</strong>
+                                {task.id != null ? ` · id ${task.id}` : ''}
+                              </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                              <div style={{ fontSize: 16, fontWeight: 900, color: palette.text }}>№ {task.number}</div>
                               {inHw ? (
                                 <span
                                   style={{
@@ -674,6 +702,7 @@ export function TasksPage({
                               </span>
                             </div>
                           </div>
+                        </div>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: st.fg, fontWeight: 800 }}>
                             <span aria-hidden>{st.mark}</span>
@@ -686,7 +715,7 @@ export function TasksPage({
                         <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr auto', gap: 10, alignItems: 'center' }}>
                           <div style={{ color: palette.muted, fontWeight: 800 }}>Ответ:</div>
                           <input
-                            value={answers[task.id] || ''}
+                            value={answers[String(task.id)] || ''}
                             onChange={(e) => setAnswer(task.id, e.target.value)}
                             placeholder="Введите ответ"
                             style={{
@@ -717,8 +746,8 @@ export function TasksPage({
                             {checkingTaskId === task.id ? 'Проверка...' : 'Проверить'}
                           </button>
                         </div>
-                        {feedbackByTaskId[task.id] ? (
-                          <div style={{ marginTop: 8, color: palette.text, fontSize: 13 }}>{feedbackByTaskId[task.id]}</div>
+                        {feedbackByTaskId[String(task.id)] ? (
+                          <div style={{ marginTop: 8, color: palette.text, fontSize: 13 }}>{feedbackByTaskId[String(task.id)]}</div>
                         ) : null}
                       </div>
                     </article>

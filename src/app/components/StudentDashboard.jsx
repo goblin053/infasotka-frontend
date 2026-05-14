@@ -42,7 +42,7 @@ const defaultAiInsight = {
 };
 
 const defaultStats = {
-  solvedTasks: 142,
+  solvedTasks: 0,
   successRate: '87%',
   streakDays: 7,
   hoursInApp: '24',
@@ -453,7 +453,8 @@ export function StudentDashboard({
           ? '—'
           : `${stats.hoursInApp} часа`;
     return {
-      solvedTasks: dashboard.totalSolved || stats.solvedTasks,
+      // Не использовать ||: при totalSolved === 0 иначе подставлялись демо-142.
+      solvedTasks: dashboardData != null ? dashboard.totalSolved : stats.solvedTasks,
       successRate: dashboardData ? dashboard.successRate : stats.successRate,
       streakLine,
       hoursLine,

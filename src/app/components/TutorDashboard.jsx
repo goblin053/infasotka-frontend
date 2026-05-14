@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { AlertCircle, ChevronRight, Send } from 'lucide-react';
 import { ScheduleCalendar } from './ScheduleCalendar';
-import { TutorHomeworkAssign } from './TutorHomeworkAssign';
 import { apiRequest } from '../shared/apiClient';
 
 const palette = {
@@ -59,10 +58,6 @@ export function TutorDashboard({
   onDeleteScheduleEvent,
   onFetchLessonDetails,
   onOpenStudentStats,
-  homeworkTasks = [],
-  homeworkTasksLoading = false,
-  onCreateHomework,
-  onReloadHomeworkTasks,
 }) {
   const students = Array.isArray(studentsData) ? studentsData : [];
   const calendarEvents = Array.isArray(scheduleEvents) ? scheduleEvents : [];
@@ -604,15 +599,6 @@ export function TutorDashboard({
             </form>
           </section>
         ) : null}
-
-        <TutorHomeworkAssign
-          scheduleEvents={calendarEvents}
-          scheduleLoading={scheduleLoading}
-          tasks={homeworkTasks}
-          tasksLoading={homeworkTasksLoading}
-          onCreateHomework={onCreateHomework}
-          onReloadTasks={onReloadHomeworkTasks}
-        />
 
         <div style={{ marginTop: 20 }}>
           {scheduleError ? (

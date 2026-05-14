@@ -6,6 +6,7 @@ function activeNavFromPath(pathname) {
   if (pathname.startsWith('/tutor/profile')) return 'profile';
   if (pathname.startsWith('/tutor/chat')) return 'chat';
   if (pathname.startsWith('/tutor/lessons-archive')) return 'lessons';
+  if (pathname.startsWith('/tutor/tasks')) return 'tasks';
   if (pathname.startsWith('/tutor/students/')) return 'dashboard';
   if (pathname.startsWith('/tutor/dashboard')) return 'dashboard';
   return 'dashboard';

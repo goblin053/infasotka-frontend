@@ -12,6 +12,7 @@ import { TaskSolutionPage } from './components/TaskSolutionPage';
 import { TasksPage } from './components/TasksPage';
 import { TutorChat } from './components/TutorChat';
 import { TutorDashboard } from './components/TutorDashboard';
+import { TutorTasksHomeworkPage } from './components/TutorTasksHomeworkPage';
 import { TutorStudentStatsPage } from './components/TutorStudentStatsPage';
 import { TutorProfile } from './components/TutorProfile';
 import { TutorShell } from './components/TutorShell';
@@ -61,6 +62,7 @@ const sidebarByRole = {
   ],
   tutor: [
     { path: '/tutor/dashboard', label: 'Панель' },
+    { path: '/tutor/tasks', label: 'Задания' },
     { path: '/tutor/chat', label: 'Чат' },
     { path: '/tutor/lessons-archive', label: 'Архив занятий' },
     { path: '/tutor/profile', label: 'Профиль' },
@@ -537,11 +539,17 @@ function StudentTaskSolutionRoute({
 }) {
   const { taskId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const numericTaskId = Number(taskId);
   const task = useMemo(() => tasks.find((item) => item.id === numericTaskId), [tasks, numericTaskId]);
+  const catalogListPosition =
+    location.state && typeof location.state === 'object' && location.state.catalogListPosition != null
+      ? Number(location.state.catalogListPosition)
+      : null;
   return (
     <TaskSolutionPage
       task={task}
+      catalogListPosition={Number.isFinite(catalogListPosition) && catalogListPosition > 0 ? catalogListPosition : null}
       onBackToCatalog={() => navigate('/student/tasks')}
       onSubmitSolution={onSubmitSolution}
       onDownloadTaskFile={onDownloadTaskFile}
@@ -591,10 +599,10 @@ function AppRoutes({
   onSetLessonVideoLink,
   onDeleteArchiveLesson,
   onReloadArchiveLessons,
-  tutorHomeworkTasks,
-  tutorHomeworkTasksLoading,
+  tutorHomeworkCatalog,
+  tutorHomeworkCatalogLoading,
   onCreateHomework,
-  onReloadTutorHomeworkTasks,
+  onFetchTutorTasks,
   studentHomeworkBlocks,
   studentHomeworkTaskIds,
   onReloadStudentHomework,
@@ -669,7 +677,7 @@ function AppRoutes({
                   tasks={studentTasks}
                   onFetchTasks={onFetchStudentTasks}
                   onSubmitTaskAnswer={onSubmitTaskAnswer}
-                  onOpenTask={(taskId) => navigate(`/student/tasks/${taskId}`)}
+                  onOpenTask={(taskId, navState) => navigate(`/student/tasks/${taskId}`, { state: navState || {} })}
                   answersStorageUserId={studentAnswersStorageUserId}
                   homeworkBlocks={studentHomeworkBlocks}
                   homeworkTaskIds={studentHomeworkTaskIds}
@@ -807,15 +815,45 @@ function AppRoutes({
                   onUpdateScheduleEvent={onUpdateTutorScheduleEvent}
                   onDeleteScheduleEvent={onDeleteTutorScheduleEvent}
                   onFetchLessonDetails={onFetchLessonById}
-                  homeworkTasks={tutorHomeworkTasks}
-                  homeworkTasksLoading={tutorHomeworkTasksLoading}
-                  onCreateHomework={onCreateHomework}
-                  onReloadHomeworkTasks={onReloadTutorHomeworkTasks}
                   onOpenStudentStats={(student) =>
                     navigate(`/tutor/students/${encodeURIComponent(student.id)}`, {
                       state: { studentName: student.name },
                     })
                   }
+                />
+              </TutorShell>
+            </AppLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/tutor/tasks"
+        element={
+          <ProtectedRoute authHydrated={authHydrated} session={session} allowedRoles={['tutor']}>
+            <AppLayout
+              session={session}
+              notifications={notifications}
+              onMarkAllRead={onMarkAllRead}
+              onMarkNotificationRead={onMarkNotificationRead}
+              onLogout={onLogout}
+              hideSidebar
+              hideGlobalHeader
+            >
+              <TutorShell
+                session={session}
+                notifications={notifications}
+                onMarkAllRead={onMarkAllRead}
+                onMarkNotificationRead={onMarkNotificationRead}
+                onLogout={onLogout}
+              >
+                <TutorTasksHomeworkPage
+                  scheduleEvents={tutorSchedule}
+                  scheduleLoading={lessonsLoading}
+                  tasks={tutorHomeworkCatalog}
+                  tasksLoading={tutorHomeworkCatalogLoading}
+                  onFetchTasks={onFetchTutorTasks}
+                  onCreateHomework={onCreateHomework}
+                  onReloadTasks={onFetchTutorTasks}
                 />
               </TutorShell>
             </AppLayout>
@@ -1263,19 +1301,33 @@ export default function App() {
     }));
   }, [tutorSchedule, tutorStudents]);
 
-  const loadTutorHomeworkCatalog = useCallback(async () => {
-    if (!getAccessToken() || session?.role !== 'tutor') return;
-    setTutorHomeworkCatalogLoading(true);
-    try {
-      const response = await apiRequest('/api/tasks');
-      const list = Array.isArray(response) ? response : [];
-      setTutorHomeworkCatalog(list.map(normalizeTaskFromApi).map((task) => ({ ...task, solved: false })));
-    } catch {
-      setTutorHomeworkCatalog([]);
-    } finally {
-      setTutorHomeworkCatalogLoading(false);
-    }
-  }, [session?.role]);
+  const fetchTutorTasks = useCallback(
+    async ({ topicId, difficulty } = {}) => {
+      if (!getAccessToken() || session?.role !== 'tutor') return [];
+      setTutorHomeworkCatalogLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (topicId !== undefined && topicId !== null && String(topicId).trim() !== '' && String(topicId) !== 'all') {
+          params.set('topicId', String(topicId));
+        }
+        if (difficulty && String(difficulty) !== 'all') {
+          params.set('difficulty', String(difficulty));
+        }
+        const query = params.toString();
+        const response = await apiRequest(`/api/tasks${query ? `?${query}` : ''}`);
+        const list = Array.isArray(response) ? response : [];
+        const normalized = list.map(normalizeTaskFromApi).map((task) => ({ ...task, solved: false }));
+        setTutorHomeworkCatalog(normalized);
+        return normalized;
+      } catch {
+        setTutorHomeworkCatalog([]);
+        return [];
+      } finally {
+        setTutorHomeworkCatalogLoading(false);
+      }
+    },
+    [session?.role]
+  );
 
   const createHomeworkAssignment = useCallback(async ({ lessonId, textAssignment, deadline, taskIds }) => {
     await apiRequest('/api/homeworks/create', {
@@ -1338,13 +1390,13 @@ export default function App() {
     }
     let cancelled = false;
     const run = () => {
-      if (!cancelled) loadTutorHomeworkCatalog();
+      if (!cancelled) fetchTutorTasks();
     };
     run();
     return () => {
       cancelled = true;
     };
-  }, [session?.role, session?.token, loadTutorHomeworkCatalog]);
+  }, [session?.role, session?.token, fetchTutorTasks]);
 
   useEffect(() => {
     if (session?.role !== 'student' || !session?.token) {
@@ -1544,16 +1596,26 @@ export default function App() {
       },
     });
 
-    const correct = Boolean(response?.correct);
+    const payload = response && typeof response === 'object' && response.data && typeof response.data === 'object' ? response.data : response;
+    const rawFlag = payload?.correct ?? payload?.isCorrect ?? payload?.is_correct ?? payload?.answerCorrect;
+    const correct =
+      rawFlag === true ||
+      rawFlag === 1 ||
+      (typeof rawFlag === 'string' && ['true', '1', 'yes', 'да'].includes(String(rawFlag).toLowerCase()));
     const numericId = Number(taskId);
     if (correct && Number.isFinite(numericId)) {
       setSolvedTaskIds((prev) => (prev.includes(numericId) ? prev : [...prev, numericId]));
       setStudentTasks((prev) => prev.map((item) => (Number(item.id) === numericId ? { ...item, solved: true } : item)));
     }
 
+    const message =
+      payload?.message ||
+      response?.message ||
+      (correct ? 'Ответ верный' : 'Ответ неверный');
+
     return {
       correct,
-      message: response?.message || (correct ? 'Ответ верный' : 'Ответ неверный'),
+      message,
     };
   };
 
@@ -1635,10 +1697,10 @@ export default function App() {
         onSetLessonVideoLink={patchLessonVideoLink}
         onDeleteArchiveLesson={deleteTutorScheduleEvent}
         onReloadArchiveLessons={loadTutorLessonsFromApi}
-        tutorHomeworkTasks={tutorHomeworkCatalog}
-        tutorHomeworkTasksLoading={tutorHomeworkCatalogLoading}
+        tutorHomeworkCatalog={tutorHomeworkCatalog}
+        tutorHomeworkCatalogLoading={tutorHomeworkCatalogLoading}
         onCreateHomework={createHomeworkAssignment}
-        onReloadTutorHomeworkTasks={loadTutorHomeworkCatalog}
+        onFetchTutorTasks={fetchTutorTasks}
         studentHomeworkBlocks={studentHomeworkBundle.blocks}
         studentHomeworkTaskIds={studentHomeworkBundle.homeworkTaskIds}
         onReloadStudentHomework={loadStudentHomeworks}

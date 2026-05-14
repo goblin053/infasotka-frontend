@@ -431,6 +431,7 @@ function isImageFileName(fileName) {
 
 export function TaskSolutionPage({
   task,
+  catalogListPosition = null,
   onBackToCatalog,
   onSubmitSolution,
   onDownloadTaskFile,
@@ -471,11 +472,6 @@ export function TaskSolutionPage({
     if (!task || typeof localStorage === 'undefined') return;
     localStorage.setItem(codeStorageKey(task.id), code);
   }, [task, code]);
-
-  const titleText = useMemo(() => {
-    if (!task) return '';
-    return `Задание №${task.kimNumber}. ${task.title || 'Задача'}`;
-  }, [task]);
 
   const hasIoBlocks = task && (task.inputFormat || task.outputFormat || (task.examples && task.examples.length > 0));
   const monacoLanguage = monacoLanguageByTaskType[task?.type] || 'python';
@@ -613,7 +609,47 @@ export function TaskSolutionPage({
               padding: 14,
             }}
           >
-            <div style={{ fontSize: 18, fontWeight: 900, color: palette.text, marginBottom: 10 }}>{titleText}</div>
+            <div
+              style={{
+                display: 'flex',
+                gap: 14,
+                alignItems: 'flex-start',
+                marginBottom: 12,
+              }}
+            >
+              <div
+                style={{
+                  flexShrink: 0,
+                  width: 52,
+                  height: 52,
+                  borderRadius: 10,
+                  border: `2px solid ${palette.border}`,
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontSize: 22,
+                  fontWeight: 900,
+                  color: palette.text,
+                  background: '#fff',
+                }}
+                aria-hidden
+              >
+                {String(task.number ?? task.id ?? '').trim() || '—'}
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                {catalogListPosition != null ? (
+                  <div style={{ fontSize: 12, color: palette.muted, fontWeight: 600, marginBottom: 4 }}>
+                    В списке заданий: <span style={{ color: palette.text, fontWeight: 800 }}>№{catalogListPosition}</span>
+                  </div>
+                ) : null}
+                <div style={{ fontSize: 13, color: palette.muted, fontStyle: 'italic', lineHeight: 1.35 }}>
+                  № {task.id} · {task.source || 'Банк задач'} · КИМ {task.kimNumber}
+                  {task.level ? ` · уровень: ${task.level}` : ''}
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: palette.text, marginTop: 6, lineHeight: 1.25 }}>
+                  {task.title || 'Задача'}
+                </div>
+              </div>
+            </div>
             <div style={{ color: palette.text, lineHeight: 1.35, marginBottom: 12 }}>{task.description}</div>
 
             {hasIoBlocks ? (

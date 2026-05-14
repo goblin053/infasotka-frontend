@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarCheck2, LayoutGrid, MessageCircle, User } from 'lucide-react';
+import { BookOpenCheck, CalendarCheck2, LayoutGrid, MessageCircle, User } from 'lucide-react';
 import { NotificationDropdown } from './NotificationDropdown';
 import { useOutsidePointerClose } from '../shared/useOutsidePointerClose';
 
@@ -103,6 +103,7 @@ export function TutorAppHeader({
         <nav style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, flexWrap: 'wrap' }}>
           <NavLink active={activeNav === 'lessons'} icon={CalendarCheck2} label="Занятия" onClick={() => go('/tutor/lessons-archive')} />
           <NavLink active={activeNav === 'dashboard'} icon={LayoutGrid} label="Дашбоард" onClick={() => go('/tutor/dashboard')} />
+          <NavLink active={activeNav === 'tasks'} icon={BookOpenCheck} label="Задания" onClick={() => go('/tutor/tasks')} />
           <NavLink active={activeNav === 'profile'} icon={User} label="Профиль" onClick={() => go('/tutor/profile')} />
           <NavLink active={activeNav === 'chat'} icon={MessageCircle} label="Чат" onClick={() => go('/tutor/chat')} />
         </nav>
