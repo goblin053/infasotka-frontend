@@ -32,6 +32,85 @@ async function parseResponse(response) {
   return text;
 }
 
+function collectDefaultMessagesFromText(text) {
+  const found = [];
+  const re = /default message\s*\[([^\]]+)\]/gi;
+  let match = re.exec(text);
+  while (match) {
+    const msg = String(match[1] || '').trim();
+    if (msg) found.push(msg);
+    match = re.exec(text);
+  }
+  return found;
+}
+
+function messagesFromErrorList(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .map((item) => {
+      if (!item || typeof item !== 'object') return '';
+      return String(
+        item.defaultMessage ?? item.message ?? item.msg ?? item.error ?? item.detail ?? ''
+      ).trim();
+    })
+    .filter(Boolean);
+}
+
+/** Человекочитаемый текст ошибки API (в т.ч. Spring Validation default message). */
+export function formatApiErrorMessage(payload, fallback = '') {
+  if (payload == null || payload === '') return fallback;
+
+  if (typeof payload === 'object') {
+    const nestedLists = [
+      payload.errors,
+      payload.fieldErrors,
+      payload.violations,
+      payload.details,
+      payload.subErrors,
+    ];
+    for (const list of nestedLists) {
+      const fromList = messagesFromErrorList(list);
+      if (fromList.length) return [...new Set(fromList)].join('\n');
+    }
+    if (payload.message != null) return formatApiErrorMessage(payload.message, fallback);
+    if (payload.error != null) return formatApiErrorMessage(payload.error, fallback);
+    if (payload.detail != null) return formatApiErrorMessage(payload.detail, fallback);
+    if (payload.title != null && typeof payload.title === 'string') return formatApiErrorMessage(payload.title, fallback);
+    return fallback;
+  }
+
+  let text = String(payload).trim();
+  if (!text) return fallback;
+
+  if (text.startsWith('{') || text.startsWith('[')) {
+    try {
+      return formatApiErrorMessage(JSON.parse(text), fallback);
+    } catch {
+      // plain text
+    }
+  }
+
+  text = text.replace(/^Произошла ошибка:\s*/i, '').trim();
+
+  const fromBrackets = collectDefaultMessagesFromText(text);
+  if (fromBrackets.length) return [...new Set(fromBrackets)].join('\n');
+
+  if (/Validation failed for argument/i.test(text) || /Field error in object/i.test(text)) {
+    return fallback || 'Проверьте введённые данные.';
+  }
+
+  return text || fallback;
+}
+
+function errorMessageFromPayload(payload, status) {
+  const fallback = `HTTP ${status}`;
+  if (payload == null) return fallback;
+  const formatted = formatApiErrorMessage(payload, '');
+  if (formatted) return formatted;
+  if (typeof payload === 'string' && payload.trim()) return payload.trim();
+  return fallback;
+}
+
 export async function apiRequest(path, options = {}) {
   const response = await fetch(buildUrl(path), {
     ...options,
@@ -44,8 +123,7 @@ export async function apiRequest(path, options = {}) {
 
   const payload = await parseResponse(response);
   if (!response.ok) {
-    const message = typeof payload === 'string' ? payload : payload?.message || `HTTP ${response.status}`;
-    throw new Error(message);
+    throw new Error(errorMessageFromPayload(payload, response.status));
   }
 
   return payload;
@@ -63,8 +141,7 @@ export async function healthcheck() {
 
   if (!response.ok) {
     const payload = await parseResponse(response);
-    const message = typeof payload === 'string' ? payload : payload?.message || `HTTP ${response.status}`;
-    throw new Error(message);
+    throw new Error(errorMessageFromPayload(payload, response.status));
   }
 
   return parseResponse(response);
@@ -95,8 +172,7 @@ export async function downloadTaskFile(taskId, fallbackFileName = 'task-file') {
   });
   if (!response.ok) {
     const payload = await parseResponse(response);
-    const message = typeof payload === 'string' ? payload : payload?.message || `HTTP ${response.status}`;
-    throw new Error(message);
+    throw new Error(errorMessageFromPayload(payload, response.status));
   }
   const blob = await response.blob();
   const cd = response.headers.get('content-disposition');

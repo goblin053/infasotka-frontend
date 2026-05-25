@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { CalendarClock, Paperclip, RefreshCw, Trash2, Video } from 'lucide-react';
+import { CalendarClock, Paperclip, Pencil, RefreshCw, Trash2, Video, X } from 'lucide-react';
 
 const palette = {
   pageBg: '#f8fafc',
@@ -14,48 +14,13 @@ const palette = {
   danger: '#ef4444',
 };
 
+const MATERIALS_MARKER = '\n\nМатериалы:';
+
 function initialsFromName(name) {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
   if (parts.length === 1 && parts[0].length >= 2) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0]?.[0] || '?').toUpperCase();
-}
-
-function formatDateTimeMasked(raw) {
-  const digits = String(raw || '').replace(/\D/g, '').slice(0, 12);
-  const dd = digits.slice(0, 2);
-  const mm = digits.slice(2, 4);
-  const yyyy = digits.slice(4, 8);
-  const hh = digits.slice(8, 10);
-  const min = digits.slice(10, 12);
-
-  let out = '';
-  if (dd) out += dd;
-  if (mm) out += `.${mm}`;
-  if (yyyy) out += `.${yyyy}`;
-  if (hh) out += ` ${hh}`;
-  if (min) out += `:${min}`;
-  return out;
-}
-
-/** Маска ДД.ММ.ГГГГ ЧЧ:ММ → { date: 'YYYY-MM-DD', time: 'HH:MM' } для POST /api/lessons */
-function maskedRuDateTimeToDateAndTime(masked) {
-  const digits = String(masked || '').replace(/\D/g, '');
-  if (digits.length < 12) return null;
-  const dd = Number(digits.slice(0, 2));
-  const mm = Number(digits.slice(2, 4));
-  const yyyy = Number(digits.slice(4, 8));
-  const hh = Number(digits.slice(8, 10));
-  const mi = Number(digits.slice(10, 12));
-  const d = new Date(yyyy, mm - 1, dd, hh, mi, 0, 0);
-  if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return {
-    date: `${y}-${mo}-${day}`,
-    time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
-  };
 }
 
 function lessonScheduledDate(ev) {
@@ -81,31 +46,52 @@ function isHttpUrl(s) {
   return /^https?:\/\//i.test(t);
 }
 
+function splitDescription(description) {
+  const raw = String(description || '');
+  const idx = raw.indexOf(MATERIALS_MARKER);
+  if (idx === -1) return { notes: raw.trim(), materials: '' };
+  return {
+    notes: raw.slice(0, idx).trim(),
+    materials: raw.slice(idx + MATERIALS_MARKER.length).trim(),
+  };
+}
+
+function buildDescription(notes, materialsLabel) {
+  const body = String(notes || '').trim();
+  const mat = String(materialsLabel || '').trim();
+  if (!mat) return body;
+  return [body, `Материалы: ${mat}`].filter(Boolean).join(MATERIALS_MARKER);
+}
+
+function lessonEditDraftFromLesson(lesson) {
+  const { notes, materials } = splitDescription(lesson.description);
+  return {
+    topic: lesson.title || '',
+    notes,
+    materialsLabel: materials,
+    newFile: null,
+  };
+}
+
 export function LessonsArchive({
   lessons = [],
   lessonsLoading = false,
   lessonsError = '',
   tutorStudents = [],
-  tutorStudentsLoading = false,
-  onAddLesson,
+  onUpdateLesson,
   onSetVideoLink,
   onDeleteLesson,
   onReloadLessons,
 }) {
-  const fileInputRef = useRef(null);
+  const fileInputRefs = useRef({});
   const [filterStudentId, setFilterStudentId] = useState('all');
-  const [form, setForm] = useState({
-    studentId: '',
-    datetime: '',
-    topic: '',
-    notes: '',
-  });
-  const [attachedFile, setAttachedFile] = useState(null);
   const [actionError, setActionError] = useState('');
-  const [formPending, setFormPending] = useState(false);
   const [deletePendingId, setDeletePendingId] = useState('');
   const [videoDraft, setVideoDraft] = useState({});
   const [videoSavingId, setVideoSavingId] = useState('');
+  const [editingLessonId, setEditingLessonId] = useState('');
+  const [editDraft, setEditDraft] = useState({});
+  const [editPendingId, setEditPendingId] = useState('');
 
   const sortedLessons = useMemo(() => {
     const list = Array.isArray(lessons) ? [...lessons] : [];
@@ -123,44 +109,59 @@ export function LessonsArchive({
     return sortedLessons.filter((item) => String(item.studentId || '') === filterStudentId);
   }, [sortedLessons, filterStudentId]);
 
-  const saveLesson = async () => {
+  const startEdit = (lesson) => {
     setActionError('');
-    if (!onAddLesson) {
-      setActionError('Добавление занятий недоступно.');
+    setEditingLessonId(String(lesson.id));
+    setEditDraft((prev) => ({
+      ...prev,
+      [lesson.id]: lessonEditDraftFromLesson(lesson),
+    }));
+  };
+
+  const cancelEdit = (lessonId) => {
+    setEditingLessonId('');
+    setEditDraft((prev) => {
+      const next = { ...prev };
+      delete next[lessonId];
+      return next;
+    });
+  };
+
+  const updateEditField = (lessonId, field, value) => {
+    setEditDraft((prev) => ({
+      ...prev,
+      [lessonId]: {
+        ...(prev[lessonId] || {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveLessonEdit = async (lesson) => {
+    setActionError('');
+    if (!onUpdateLesson) {
+      setActionError('Редактирование занятий недоступно.');
       return;
     }
-    if (!form.studentId.trim()) {
-      setActionError('Выберите ученика.');
-      return;
-    }
-    const dtParts = maskedRuDateTimeToDateAndTime(form.datetime);
-    if (!dtParts) {
-      setActionError('Укажите дату и время полностью: ДД.ММ.ГГГГ ЧЧ:ММ');
-      return;
-    }
-    if (!form.topic.trim()) {
+    const draft = editDraft[lesson.id] || lessonEditDraftFromLesson(lesson);
+    if (!String(draft.topic || '').trim()) {
       setActionError('Укажите тему занятия.');
       return;
     }
-    setFormPending(true);
+    const materialsName = draft.newFile?.name || draft.materialsLabel || '';
+    const description = buildDescription(draft.notes, materialsName);
+
+    setEditPendingId(String(lesson.id));
     try {
-      let description = String(form.notes || '').trim();
-      if (attachedFile?.name) {
-        description = [description, `Материалы: ${attachedFile.name}`].filter(Boolean).join('\n\n');
-      }
-      await onAddLesson({
-        date: dtParts.date,
-        time: dtParts.time,
-        studentId: form.studentId.trim(),
-        title: form.topic.trim(),
+      await onUpdateLesson(lesson.id, {
+        title: String(draft.topic).trim(),
         description,
       });
-      setForm({ studentId: '', datetime: '', topic: '', notes: '' });
-      setAttachedFile(null);
+      cancelEdit(lesson.id);
     } catch (e) {
-      setActionError(e?.message || 'Не удалось сохранить занятие.');
+      setActionError(e?.message || 'Не удалось сохранить изменения.');
     } finally {
-      setFormPending(false);
+      setEditPendingId('');
     }
   };
 
@@ -170,6 +171,7 @@ export function LessonsArchive({
     setDeletePendingId(String(lessonId));
     try {
       await onDeleteLesson(lessonId);
+      if (String(editingLessonId) === String(lessonId)) cancelEdit(lessonId);
     } catch (e) {
       setActionError(e?.message || 'Не удалось удалить занятие.');
     } finally {
@@ -209,11 +211,25 @@ export function LessonsArchive({
     return lesson.videoLessonLink || '';
   };
 
+  const inputStyle = {
+    width: '100%',
+    border: `1px solid ${palette.border}`,
+    borderRadius: 10,
+    padding: '10px 12px',
+    boxSizing: 'border-box',
+    fontSize: 14,
+  };
+
   return (
     <div style={{ flex: 1, minHeight: 0, overflow: 'auto', background: palette.pageBg, padding: '20px 22px 30px', boxSizing: 'border-box' }}>
       <div style={{ maxWidth: 1120, margin: '0 auto', width: '100%', display: 'grid', gap: 18 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-          <h1 style={{ margin: 0, color: palette.text, fontSize: 22, fontWeight: 800, lineHeight: 1.2 }}>Занятия и архив</h1>
+          <div>
+            <h1 style={{ margin: 0, color: palette.text, fontSize: 22, fontWeight: 800, lineHeight: 1.2 }}>Занятия</h1>
+            <p style={{ margin: '8px 0 0', color: palette.muted, fontSize: 14, lineHeight: 1.4 }}>
+              Прошедшие и предстоящие занятия подгружаются из расписания автоматически.
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => onReloadLessons?.()}
@@ -240,128 +256,17 @@ export function LessonsArchive({
         {lessonsError ? (
           <div style={{ padding: 12, borderRadius: 10, background: '#fff1f2', color: '#9f1239', fontWeight: 600, fontSize: 14 }}>{lessonsError}</div>
         ) : null}
+        {actionError ? (
+          <div style={{ padding: 12, borderRadius: 10, background: '#fff1f2', color: '#9f1239', fontWeight: 600, fontSize: 14 }}>{actionError}</div>
+        ) : null}
         {lessonsLoading && !sortedLessons.length ? (
           <div style={{ color: palette.muted, fontWeight: 600 }}>Загрузка занятий...</div>
         ) : null}
 
-        <section style={{ background: palette.card, border: `1px solid ${palette.border}`, borderRadius: 14, padding: '18px 18px 16px' }}>
-          <h2 style={{ margin: '0 0 12px', color: palette.text, fontSize: 18, fontWeight: 800, lineHeight: 1.2 }}>Записать занятие</h2>
-          <p style={{ margin: '0 0 16px', color: palette.muted, fontSize: 13, lineHeight: 1.45 }}>
-            Создайте запись о прошедшем или запланированном занятии: оно появится у вас и у ученика в расписании. После проведения урока добавьте ссылку на запись ниже в карточке занятия.
-          </p>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
-            <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ fontSize: 13, color: palette.text, fontWeight: 700 }}>Ученик *</span>
-              <select
-                value={form.studentId}
-                onChange={(e) => setForm((prev) => ({ ...prev, studentId: e.target.value }))}
-                disabled={tutorStudentsLoading || !tutorStudents.length}
-                style={{ width: '100%', border: `1px solid ${palette.border}`, borderRadius: 10, padding: '10px 12px', background: '#fff' }}
-              >
-                <option value="">{tutorStudentsLoading ? 'Загрузка...' : tutorStudents.length ? 'Выберите ученика' : 'Нет учеников в списке'}</option>
-                {tutorStudents.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ fontSize: 13, color: palette.text, fontWeight: 700 }}>Дата и время *</span>
-              <input
-                value={form.datetime}
-                onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    datetime: formatDateTimeMasked(e.target.value),
-                  }))
-                }
-                inputMode="numeric"
-                maxLength={16}
-                placeholder="дд.мм.гггг чч:мм"
-                style={{ width: '100%', border: `1px solid ${palette.border}`, borderRadius: 10, padding: '10px 12px', boxSizing: 'border-box' }}
-              />
-            </label>
-          </div>
-
-          <label style={{ display: 'grid', gap: 6, marginTop: 12 }}>
-            <span style={{ fontSize: 13, color: palette.text, fontWeight: 700 }}>Тема занятия *</span>
-            <input
-              value={form.topic}
-              onChange={(e) => setForm((prev) => ({ ...prev, topic: e.target.value }))}
-              placeholder="Например: Динамическое программирование"
-              style={{ width: '100%', border: `1px solid ${palette.border}`, borderRadius: 10, padding: '10px 12px', boxSizing: 'border-box' }}
-            />
-          </label>
-
-          <label style={{ display: 'grid', gap: 6, marginTop: 12 }}>
-            <span style={{ fontSize: 13, color: palette.text, fontWeight: 700 }}>Краткая информация / тезисы</span>
-            <textarea
-              value={form.notes}
-              onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
-              placeholder="Опишите ключевые моменты занятия, достижения ученика, домашнее задание..."
-              style={{ width: '100%', minHeight: 96, border: `1px solid ${palette.border}`, borderRadius: 10, padding: '10px 12px', boxSizing: 'border-box', resize: 'vertical' }}
-            />
-          </label>
-
-          <label style={{ display: 'block', marginTop: 12 }}>
-            <span style={{ fontSize: 13, color: palette.text, fontWeight: 700, display: 'block', marginBottom: 6 }}>Материалы</span>
-            <input ref={fileInputRef} type="file" style={{ display: 'none' }} onChange={(e) => setAttachedFile(e.target.files?.[0] || null)} />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              style={{
-                width: '100%',
-                border: `1px solid ${palette.border}`,
-                borderRadius: 10,
-                padding: '10px 12px',
-                background: '#fff',
-                display: 'inline-flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                gap: 8,
-                color: palette.muted,
-                cursor: 'pointer',
-                boxSizing: 'border-box',
-                fontSize: 14,
-              }}
-            >
-              <Paperclip size={16} aria-hidden />
-              {attachedFile ? attachedFile.name : 'Прикрепить файл (имя файла добавится в описание)'}
-            </button>
-          </label>
-
-          {actionError ? (
-            <div style={{ marginTop: 12, color: '#b91c1c', fontWeight: 600, fontSize: 13 }}>{actionError}</div>
-          ) : null}
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-            <button
-              type="button"
-              onClick={saveLesson}
-              disabled={formPending}
-              style={{
-                border: 0,
-                borderRadius: 10,
-                background: palette.blue,
-                color: '#fff',
-                fontWeight: 700,
-                padding: '10px 18px',
-                cursor: formPending ? 'wait' : 'pointer',
-                opacity: formPending ? 0.75 : 1,
-              }}
-            >
-              {formPending ? 'Сохранение...' : 'Сохранить занятие'}
-            </button>
-          </div>
-        </section>
-
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <h2 style={{ margin: 0, color: palette.text, fontSize: 20, fontWeight: 800, lineHeight: 1.15 }}>Архив занятий</h2>
+          <h2 style={{ margin: 0, color: palette.text, fontSize: 18, fontWeight: 800, lineHeight: 1.15 }}>Список занятий</h2>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 15, color: palette.muted, fontWeight: 600 }}>Фильтр по ученику:</span>
+            <span style={{ fontSize: 14, color: palette.muted, fontWeight: 600 }}>Фильтр по ученику:</span>
             <select
               value={filterStudentId}
               onChange={(e) => setFilterStudentId(e.target.value)}
@@ -378,17 +283,23 @@ export function LessonsArchive({
         </div>
 
         {!filteredLessons.length && !lessonsLoading ? (
-          <div style={{ color: palette.muted, fontWeight: 600, fontSize: 14 }}>Пока нет занятий. Создайте первое занятие формой выше.</div>
+          <div style={{ color: palette.muted, fontWeight: 600, fontSize: 14 }}>
+            Занятий пока нет. Они появятся здесь после создания в календаре на панели репетитора.
+          </div>
         ) : null}
 
         <div style={{ display: 'grid', gap: 14 }}>
           {filteredLessons.map((lesson) => {
             const past = lessonIsPast(lesson);
             const studentLabel = lesson.student || 'Ученик';
+            const isEditing = String(editingLessonId) === String(lesson.id);
+            const draft = editDraft[lesson.id] || lessonEditDraftFromLesson(lesson);
+            const displayDescription = splitDescription(lesson.description);
+
             return (
               <article key={lesson.id} style={{ background: palette.card, border: `1px solid ${palette.border}`, borderRadius: 16, padding: 20 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', gap: 12, minWidth: 0 }}>
+                  <div style={{ display: 'flex', gap: 12, minWidth: 0, flex: '1 1 280px' }}>
                     <div
                       style={{
                         width: 54,
@@ -406,9 +317,20 @@ export function LessonsArchive({
                     >
                       {initialsFromName(studentLabel)}
                     </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ color: palette.text, fontSize: 16, fontWeight: 800, lineHeight: 1.2 }}>{lesson.title}</div>
-                      <div style={{ color: palette.muted, fontSize: 14, marginTop: 4, lineHeight: 1.25 }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      {isEditing ? (
+                        <label style={{ display: 'grid', gap: 6 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: palette.muted }}>Тема занятия</span>
+                          <input
+                            value={draft.topic}
+                            onChange={(e) => updateEditField(lesson.id, 'topic', e.target.value)}
+                            style={inputStyle}
+                          />
+                        </label>
+                      ) : (
+                        <div style={{ color: palette.text, fontSize: 16, fontWeight: 800, lineHeight: 1.2 }}>{lesson.title}</div>
+                      )}
+                      <div style={{ color: palette.muted, fontSize: 14, marginTop: isEditing ? 10 : 4, lineHeight: 1.25 }}>
                         {studentLabel} <span style={{ margin: '0 8px' }}>•</span> {formatRuDateTimeLabel(lesson)}
                       </div>
                     </div>
@@ -428,6 +350,49 @@ export function LessonsArchive({
                       <CalendarClock size={18} aria-hidden />
                       {past ? 'Прошедшее' : 'Запланировано'}
                     </div>
+                    {!isEditing ? (
+                      <button
+                        type="button"
+                        onClick={() => startEdit(lesson)}
+                        style={{
+                          border: `1px solid ${palette.border}`,
+                          background: '#fff',
+                          color: palette.text,
+                          borderRadius: 10,
+                          height: 32,
+                          padding: '0 10px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          fontSize: 13,
+                          fontWeight: 700,
+                        }}
+                      >
+                        <Pencil size={14} aria-hidden />
+                        Редактировать
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => cancelEdit(lesson.id)}
+                        style={{
+                          border: `1px solid ${palette.border}`,
+                          background: '#fff',
+                          color: palette.muted,
+                          borderRadius: 10,
+                          width: 32,
+                          height: 32,
+                          cursor: 'pointer',
+                          display: 'grid',
+                          placeItems: 'center',
+                          padding: 0,
+                        }}
+                        aria-label="Отменить редактирование"
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => removeLesson(lesson.id)}
@@ -451,9 +416,96 @@ export function LessonsArchive({
                   </div>
                 </div>
 
-                {lesson.description ? (
-                  <p style={{ margin: '16px 0 0', color: palette.text, fontSize: 14, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{lesson.description}</p>
-                ) : null}
+                {isEditing ? (
+                  <div
+                    style={{
+                      marginTop: 16,
+                      padding: 14,
+                      borderRadius: 12,
+                      border: `1px solid ${palette.border}`,
+                      background: palette.cardInner,
+                      display: 'grid',
+                      gap: 12,
+                    }}
+                  >
+                    <label style={{ display: 'grid', gap: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: palette.text }}>Описание / тезисы</span>
+                      <textarea
+                        value={draft.notes}
+                        onChange={(e) => updateEditField(lesson.id, 'notes', e.target.value)}
+                        placeholder="Ключевые моменты занятия, домашнее задание..."
+                        style={{ ...inputStyle, minHeight: 96, resize: 'vertical' }}
+                      />
+                    </label>
+                    <div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: palette.text, display: 'block', marginBottom: 6 }}>Материалы</span>
+                      <input
+                        ref={(el) => {
+                          fileInputRefs.current[lesson.id] = el;
+                        }}
+                        type="file"
+                        style={{ display: 'none' }}
+                        onChange={(e) => updateEditField(lesson.id, 'newFile', e.target.files?.[0] || null)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRefs.current[lesson.id]?.click()}
+                        style={{
+                          width: '100%',
+                          border: `1px solid ${palette.border}`,
+                          borderRadius: 10,
+                          padding: '10px 12px',
+                          background: '#fff',
+                          display: 'inline-flex',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          gap: 8,
+                          color: palette.muted,
+                          cursor: 'pointer',
+                          boxSizing: 'border-box',
+                          fontSize: 14,
+                        }}
+                      >
+                        <Paperclip size={16} aria-hidden />
+                        {draft.newFile
+                          ? draft.newFile.name
+                          : draft.materialsLabel || 'Прикрепить файл (имя добавится в описание)'}
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => saveLessonEdit(lesson)}
+                        disabled={editPendingId === String(lesson.id)}
+                        style={{
+                          border: 0,
+                          borderRadius: 10,
+                          background: palette.blue,
+                          color: '#fff',
+                          fontWeight: 700,
+                          padding: '10px 18px',
+                          cursor: editPendingId === String(lesson.id) ? 'wait' : 'pointer',
+                          opacity: editPendingId === String(lesson.id) ? 0.75 : 1,
+                        }}
+                      >
+                        {editPendingId === String(lesson.id) ? 'Сохранение...' : 'Сохранить изменения'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {displayDescription.notes ? (
+                      <p style={{ margin: '16px 0 0', color: palette.text, fontSize: 14, lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+                        {displayDescription.notes}
+                      </p>
+                    ) : null}
+                    {displayDescription.materials ? (
+                      <p style={{ margin: '8px 0 0', color: palette.muted, fontSize: 13, lineHeight: 1.4 }}>
+                        <strong style={{ color: palette.text }}>Материалы:</strong> {displayDescription.materials}
+                      </p>
+                    ) : null}
+                  </>
+                )}
 
                 {lesson.meetingLink && isHttpUrl(lesson.meetingLink) ? (
                   <div style={{ marginTop: 12 }}>
@@ -477,7 +529,7 @@ export function LessonsArchive({
                     Запись занятия
                   </div>
                   <p style={{ margin: '0 0 10px', color: palette.muted, fontSize: 12, lineHeight: 1.4 }}>
-                    После сохранения ссылка будет доступна вам и ученику в расписании (карточка занятия).
+                    После сохранения ссылка будет доступна вам и ученику в расписании.
                   </p>
                   {lesson.videoLessonLink && isHttpUrl(lesson.videoLessonLink) ? (
                     <div style={{ marginBottom: 10 }}>

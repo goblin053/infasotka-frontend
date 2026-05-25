@@ -266,7 +266,7 @@ export function RegistrationPage({ onLogin }) {
             </label>
           )}
 
-          {error ? <p style={{ color: '#b00020', marginTop: 0 }}>{error}</p> : null}
+          {error ? <p style={{ color: '#b00020', marginTop: 0, whiteSpace: 'pre-line', lineHeight: 1.4 }}>{error}</p> : null}
           {info ? <p style={{ color: '#157347', marginTop: 0 }}>{info}</p> : null}
 
           <button

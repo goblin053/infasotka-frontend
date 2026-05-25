@@ -16,6 +16,7 @@ import { TutorTasksHomeworkPage } from './components/TutorTasksHomeworkPage';
 import { TutorStudentStatsPage } from './components/TutorStudentStatsPage';
 import { TutorProfile } from './components/TutorProfile';
 import { TutorShell } from './components/TutorShell';
+import { AppFooter } from './components/AppFooter';
 import { API_URL, apiRequest, clearAccessToken, downloadTaskFile, getAccessToken, healthcheck } from './shared/apiClient';
 import {
   decodeJwtPayload,
@@ -525,6 +526,7 @@ function AppLayout({
           {children}
         </section>
       </div>
+      <AppFooter role={role} />
     </div>
   );
 }
@@ -590,6 +592,7 @@ function AppRoutes({
   lessonsArchiveLoading,
   lessonsArchiveError,
   onAddArchiveLesson,
+  onUpdateArchiveLesson,
   onSetLessonVideoLink,
   onDeleteArchiveLesson,
   onReloadArchiveLessons,
@@ -932,7 +935,7 @@ function AppRoutes({
                   lessonsError={lessonsArchiveError}
                   tutorStudents={tutorStudents}
                   tutorStudentsLoading={tutorStudentsLoading}
-                  onAddLesson={onAddArchiveLesson}
+                  onUpdateLesson={onUpdateArchiveLesson}
                   onSetVideoLink={onSetLessonVideoLink}
                   onDeleteLesson={onDeleteArchiveLesson}
                   onReloadLessons={onReloadArchiveLessons}
@@ -1460,6 +1463,57 @@ export default function App() {
     setTutorSchedule((prev) => prev.map((item) => (String(item.id) === idStr ? { ...item, ...patch } : item)));
   };
 
+  const patchLessonContent = async (lessonId, { title, description }) => {
+    const idStr = String(lessonId);
+    const existing = tutorSchedule.find((item) => String(item.id) === idStr);
+    if (!existing) throw new Error('Занятие не найдено в расписании.');
+
+    const tutorId = String(session?.userUuid || userUuidForApi(session?.token ? decodeJwtPayload(session.token) : null, null) || '').trim();
+    if (!tutorId || !isUuidString(tutorId)) {
+      throw new Error('Не найден UUID репетитора.');
+    }
+    const studentId = String(existing.studentId || '').trim();
+    if (!studentId) throw new Error('У занятия не указан ученик.');
+
+    const nextTitle = String(title ?? existing.title).trim();
+    if (!nextTitle) throw new Error('Укажите тему занятия.');
+
+    const scheduledAt = combineLocalDateTimeToIso(existing.date, existing.time);
+    const nextDescription = String(description ?? existing.description ?? '').trim();
+
+    const body = {
+      title: nextTitle,
+      description: nextDescription,
+      tutorId,
+      studentId,
+      scheduledAt,
+    };
+
+    let updated;
+    try {
+      updated = await apiRequest(`/api/lessons/${encodeURIComponent(idStr)}`, {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      });
+    } catch (putError) {
+      updated = await apiRequest(`/api/lessons/${encodeURIComponent(idStr)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ title: nextTitle, description: nextDescription }),
+      });
+    }
+
+    const nameById = Object.fromEntries(tutorStudents.map((s) => [String(s.id), s.name]));
+    const ev = calendarEventFromLessonApi(updated, nameById);
+    setTutorSchedule((prev) =>
+      prev.map((item) => {
+        if (String(item.id) !== idStr) return item;
+        if (ev) return { ...item, ...ev };
+        return { ...item, title: nextTitle, description: nextDescription };
+      })
+    );
+    return updated;
+  };
+
   const patchLessonVideoLink = async (lessonId, videoLink) => {
     const idStr = encodeURIComponent(String(lessonId));
     const link = String(videoLink || '').trim();
@@ -1688,6 +1742,7 @@ export default function App() {
         lessonsArchiveLoading={lessonsLoading}
         lessonsArchiveError={lessonsError}
         onAddArchiveLesson={addTutorScheduleEvent}
+        onUpdateArchiveLesson={patchLessonContent}
         onSetLessonVideoLink={patchLessonVideoLink}
         onDeleteArchiveLesson={deleteTutorScheduleEvent}
         onReloadArchiveLessons={loadTutorLessonsFromApi}
